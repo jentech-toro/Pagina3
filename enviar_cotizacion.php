@@ -1,33 +1,31 @@
 <?php
 /**
- * enviar_cotizacion.php
+ * enviar_cotizacion.php (ACTUALIZADO)
  * Recibe JSON con PDF en base64 y lo envía por correo con PHPMailer.
+ * ✅ SIN CREDENCIALES HARDCODEADAS
  */
 
 require 'init.php';
+require 'config.php';
 require 'conexion.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception as MailerException; // Renombrado para evitar conflictos
+use PHPMailer\PHPMailer\Exception as MailerException;
 
-// Todas las respuestas de este endpoint son JSON
 header('Content-Type: application/json');
 
-// ── Solo usuarios logueados pueden enviar cotizaciones ──
 if (!isset($_SESSION['user_id'])) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'No autorizado.']);
     exit;
 }
 
-// ── Solo POST con JSON ──
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'Método no permitido.']);
     exit;
 }
 
-// ── Leer body JSON ──
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true);
 
@@ -37,14 +35,12 @@ if (!$data) {
     exit;
 }
 
-// ── Validar CSRF ──
 if (!validate_csrf_token($data['csrf_token'] ?? null)) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido.']);
     exit;
 }
 
-// ── Validar campos obligatorios ──
 $nombre    = trim($data['nombre']    ?? '');
 $correo    = trim($data['correo']    ?? '');
 $empresa   = trim($data['empresa']   ?? '');
@@ -74,13 +70,11 @@ if (count($productos) > 200) {
     exit;
 }
 
-// ── Limitar tamaño del PDF (~10 MB en base64) ──
 if (strlen($pdfB64) > 14_000_000) {
     echo json_encode(['ok' => false, 'error' => 'El PDF es demasiado grande.']);
     exit;
 }
 
-// ── Decodificar PDF ──
 $pdfBytes = base64_decode($pdfB64, true);
 if ($pdfBytes === false || $pdfBytes === '') {
     echo json_encode(['ok' => false, 'error' => 'Error al decodificar el PDF.']);
@@ -88,18 +82,17 @@ if ($pdfBytes === false || $pdfBytes === '') {
 }
 
 // ══════════════════════════════════════════════════════
-// CONFIGURACIÓN SMTP
+// OBTENER CONFIGURACIÓN SMTP DESDE config.php
 // ══════════════════════════════════════════════════════
-$smtp_host     = getenv('SMTP_HOST')     ?: 'smtp.gmail.com';
-$smtp_user     = getenv('SMTP_USER')     ?: 'sales@jentechnology.ca';
-$smtp_pass     = getenv('SMTP_PASS')     ?: 'xfjbltdguibhqvpy';
-$smtp_port     = (int)(getenv('SMTP_PORT') ?: 587);
-$smtp_secure   = getenv('SMTP_SECURE')   ?: 'tls';
-$correo_destino = getenv('CORREO_DESTINO') ?: 'sales@jentechnology.ca';
+$smtpConfig = getSmtpConfig();
 
-if ($smtp_user === '' || $smtp_pass === '') {
-    error_log('SMTP no configurado: definí SMTP_USER y SMTP_PASS en el entorno.');
-    echo json_encode(['ok' => false, 'error' => 'Servidor de correo no configurado. Contactate por WhatsApp.']);
+if ($smtpConfig === null) {
+    error_log('SMTP no configurado: definí SMTP_USER y SMTP_PASS en el archivo .env');
+    http_response_code(503);
+    echo json_encode([
+        'ok' => false, 
+        'error' => 'Servidor de correo no configurado. Contactate por WhatsApp.'
+    ]);
     exit;
 }
 
@@ -117,12 +110,13 @@ if (file_exists($composerAutoload)) {
     require $manualSrc . '/SMTP.php';
 } else {
     error_log('PHPMailer no encontrado.');
-    echo json_encode(['ok' => false, 'error' => 'Servidor de correo no configurado. Contactate por WhatsApp.']);
+    http_response_code(503);
+    echo json_encode(['ok' => false, 'error' => 'Servidor de correo no configurado.']);
     exit;
 }
 
 // ══════════════════════════════════════════════════════
-// ARMAR Y ENVIAR CORREO
+// ARMAR TABLA DE PRODUCTOS
 // ══════════════════════════════════════════════════════
 $imp_monto = $subtotal * ($impuesto / 100);
 $total     = $subtotal + $imp_monto;
@@ -182,12 +176,12 @@ $cuerpo_html = "
               <td style='padding:4px 0;font-size:12px;color:#718096;width:110px;'>Nombre:</td>
               <td style='padding:4px 0;font-size:13px;color:#1a202c;font-weight:700;'>" . htmlspecialchars($nombre) . "</td>
             </tr>" .
-            ($empresa ? "<tr><td style='padding:4px 0;font-size:12px;color:#718096;'>Empresa:</td><td style='padding:4px 0;font-size:13px;color:#1a202c;'>" . htmlspecialchars($empresa) . "</td></tr>" : "") . "
+            ($empresa ? "<tr><td style='padding:4px 0;font-size:12px;color:#718096;'>Empresa:</td><td style='padding:4px 0;font-size:13px;color:#1a202c;'>" . htmlspecialchars($empresa) . "</td></tr>" : '') . "
             <tr>
               <td style='padding:4px 0;font-size:12px;color:#718096;'>Correo:</td>
               <td style='padding:4px 0;font-size:13px;color:#0064c8;'><a href='mailto:" . htmlspecialchars($correo) . "' style='color:#0064c8;'>" . htmlspecialchars($correo) . "</a></td>
             </tr>" .
-            ($telefono ? "<tr><td style='padding:4px 0;font-size:12px;color:#718096;'>Teléfono:</td><td style='padding:4px 0;font-size:13px;color:#1a202c;'>" . htmlspecialchars($telefono) . "</td></tr>" : "") . "
+            ($telefono ? "<tr><td style='padding:4px 0;font-size:12px;color:#718096;'>Teléfono:</td><td style='padding:4px 0;font-size:13px;color:#1a202c;'>" . htmlspecialchars($telefono) . "</td></tr>" : '') . "
             <tr>
               <td style='padding:4px 0;font-size:12px;color:#718096;'>Validez:</td>
               <td style='padding:4px 0;font-size:13px;color:#1a202c;'>" . htmlspecialchars($validez) . "</td>
@@ -250,7 +244,9 @@ $cuerpo_html = "
 </body>
 </html>";
 
-// ── Guardar cotización en BD ──
+// ══════════════════════════════════════════════════════
+// GUARDAR COTIZACIÓN EN BD
+// ══════════════════════════════════════════════════════
 try {
     $stmt = $conn->prepare(
         'INSERT INTO cotizaciones
@@ -270,36 +266,34 @@ try {
         ':tot'     => round($subtotal + $subtotal * $impuesto / 100, 2),
         ':val'     => $validez,
     ]);
-} catch (\Exception $dbErr) { // Se cambió a \Exception global para capturar PDOException correctamente
+} catch (\Exception $dbErr) {
     error_log('No se pudo guardar cotización en BD: ' . $dbErr->getMessage());
 }
 
-// ── Enviar Correo con PHPMailer ──
+// ══════════════════════════════════════════════════════
+// ENVIAR CORREO CON PHPMAILER
+// ══════════════════════════════════════════════════════
 try {
     $mail = new PHPMailer(true);
 
-    // SMTP Configuration
     $mail->isSMTP();
-    $mail->Host       = $smtp_host;
+    $mail->Host       = $smtpConfig['host'];
     $mail->SMTPAuth   = true;
-    $mail->Username   = $smtp_user;
-    $mail->Password   = $smtp_pass;
-    $mail->SMTPSecure = $smtp_secure === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port       = $smtp_port;
+    $mail->Username   = $smtpConfig['user'];
+    $mail->Password   = $smtpConfig['password'];
+    $mail->SMTPSecure = $smtpConfig['secure'] === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = $smtpConfig['port'];
     $mail->CharSet    = 'UTF-8';
 
-    // Remitente y destinatario
-    $mail->setFrom($smtp_user, 'Jentechnology Web');
-    $mail->addAddress($correo_destino, 'Jentechnology');
+    $mail->setFrom($smtpConfig['user'], 'Jentechnology Web');
+    $mail->addAddress($smtpConfig['destino'], 'Jentechnology');
     $mail->addReplyTo($correo, $nombre);
 
-    // Asunto y cuerpo
     $mail->isHTML(true);
     $mail->Subject = "Nueva cotización {$folio} — {$nombre}" . ($empresa ? " ({$empresa})" : '');
     $mail->Body    = $cuerpo_html;
     $mail->AltBody = "Nueva cotización {$folio} de {$nombre} ({$correo}). Ver PDF adjunto.";
 
-    // Adjuntar PDF desde memoria
     $mail->addStringAttachment($pdfBytes, $pdfNombre, PHPMailer::ENCODING_BASE64, 'application/pdf');
 
     $mail->send();
@@ -307,10 +301,13 @@ try {
     error_log("Cotización {$folio} enviada OK — Cliente: {$nombre} <{$correo}>");
     echo json_encode(['ok' => true, 'folio' => $folio]);
 
-} catch (MailerException $e) { // Captura específica de errores de PHPMailer
+} catch (MailerException $e) {
     error_log("Error de PHPMailer enviando cotización {$folio}: " . $mail->ErrorInfo);
+    http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'No se pudo enviar el correo de manera interna.']);
-} catch (\Exception $e) { // Captura cualquier otro error en el proceso de envío
+} catch (\Exception $e) {
     error_log("Error general enviando cotización {$folio}: " . $e->getMessage());
+    http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'No se pudo enviar el correo. Intentá de nuevo o contactanos por WhatsApp.']);
 }
+?>
