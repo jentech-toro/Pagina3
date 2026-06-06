@@ -1,5 +1,11 @@
 <?php
+/**
+ * procesar_registro.php (ACTUALIZADO)
+ * Manejo seguro del registro con admin_secret desde configuración centralizada
+ */
+
 require 'init.php';
+require 'config.php';
 require 'conexion.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -10,7 +16,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $admin_code   = isset($_POST['admin_code'])       ? trim($_POST['admin_code'])       : '';
     $csrf         = isset($_POST['csrf_token'])       ? $_POST['csrf_token']             : null;
 
-    // ── Destino de retorno seguro (index.php o el que venga en return_to) ──
     $returnRaw = isset($_POST['return_to']) ? basename(trim($_POST['return_to'])) : 'index.php';
     $safeReturn = in_array($returnRaw, ['index.php', 'productos.php']) ? $returnRaw : 'index.php';
 
@@ -51,7 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nombre = explode('@', $email)[0];
     $hash   = password_hash($password, PASSWORD_DEFAULT);
     $rol    = 'user';
-    $adminSecret = getenv('ADMIN_SECRET') ?: 'ADMIN2026';
+    
+    // ── Obtener admin_secret desde config.php (seguro, no hardcodeado) ──
+    $securityConfig = getSecurityConfig();
+    $adminSecret = $securityConfig['admin_secret'];
 
     if ($admin_code !== '') {
         if ($admin_code !== $adminSecret) {
@@ -71,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $insert->bindParam(':rol',      $rol);
 
     if ($insert->execute()) {
-        // Redirigir al index con éxito — el modal de login se abrirá automáticamente
         header('Location: ' . $safeReturn . '?reg_success=1');
     } else {
         header('Location: ' . $safeReturn . '?reg_error=1');
@@ -79,6 +86,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// GET directo → redirigir al index
 header('Location: index.php');
 exit;
+?>
