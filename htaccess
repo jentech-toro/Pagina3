@@ -1,0 +1,61 @@
+# ============================================================
+# Jentechnology — .htaccess
+# ============================================================
+
+# ── Página 404 personalizada ──
+ErrorDocument 404 /404.php
+ErrorDocument 403 /404.php
+ErrorDocument 500 /404.php
+
+# ── Activar mod_rewrite ──
+Options -Indexes
+RewriteEngine On
+
+# ── Redirigir a HTTPS (descomenta en producción) ──
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ── Bloquear acceso directo a archivos sensibles ──
+<FilesMatch "^(conexion|init|procesar_login|procesar_registro|procesar_contacto|enviar_cotizacion)\.php$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# ── Bloquear acceso a archivos de configuración ──
+<FilesMatch "\.(env|sql|log|sh|bak|git)$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# ── Bloquear acceso a carpetas sensibles ──
+RewriteRule ^vendor/.*$ /404.php [L,R=403]
+RewriteRule ^phpmailer/.*$ /404.php [L,R=403]
+
+# ── Proteger carpeta imagen (solo imágenes) ──
+<FilesMatch "^imagen/.*\.php$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# ── Headers de seguridad ──
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set X-XSS-Protection "1; mode=block"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ── Comprimir respuestas (mejora velocidad) ──
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
+</IfModule>
+
+# ── Cache de imágenes y archivos estáticos ──
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/png  "access plus 1 month"
+  ExpiresByType image/webp "access plus 1 month"
+  ExpiresByType text/css   "access plus 1 week"
+  ExpiresByType application/javascript "access plus 1 week"
+</IfModule>
